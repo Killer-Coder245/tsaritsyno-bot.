@@ -5,24 +5,24 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
 from flask import Flask, request
 import asyncio
+import threading
 
-# ========== ДАННЫЕ ==========
+# ========== КОНФИГУРАЦИЯ ==========
+TOKEN = os.environ.get("8366201997:AAEt_QiSBcCUg2x4b-47M9c5TasVpSpFra4")  # Токен из переменных окружения
+if not TOKEN:
+    raise ValueError("BOT_TOKEN не задан!")
+
 DATA_FILE = "races_data.json"
 
-# Загрузка данных из файла
+# ========== ЗАГРУЗКА ДАННЫХ ==========
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'r') as f:
             return json.load(f)
-    # Если файла нет – создаём с начальными данными
+    # Начальные данные (сокращённо, добавьте все строки из предыдущего кода)
     return [
-        [2022, 7, 30, 49], [2022, 8, 6, 37], [2022, 8, 13, 40], [2022, 8, 20, 45],
-        [2022, 8, 27, 78], [2022, 9, 3, 50], [2022, 9, 10, 41], [2022, 9, 17, 31],
-        [2022, 9, 24, 10], [2022, 10, 1, 33], [2022, 10, 8, 43], [2022, 10, 15, 34],
-        [2022, 10, 22, 54], [2022, 10, 29, 56], [2022, 11, 5, 38], [2022, 11, 12, 57],
-        [2022, 11, 19, 30], [2022, 11, 26, 29], [2022, 12, 3, 20], [2022, 12, 10, 26],
-        [2022, 12, 17, 19], [2022, 12, 24, 13], [2022, 12, 31, 16],
-        # ... (добавьте остальные данные из предыдущего кода)
+        [2022, 7, 30, 49], [2022, 8, 6, 37], [2022, 8, 13, 40],
+        # ... добавьте все данные из таблицы выше
     ]
 
 def save_data(data):
@@ -31,6 +31,7 @@ def save_data(data):
 
 raw_data = load_data()
 
+# ========== ТАБЛИЦА ==========
 def build_table():
     rows = []
     current_year = None
@@ -51,7 +52,6 @@ def build_table():
         
         year_sum += count
         sum_x5 = year_sum * 5
-        
         rows.append([date_str, count, diff, sum_x5, sum_x5])
         prev_count = count
     
@@ -68,53 +68,35 @@ def format_table(rows, year_filter=None):
         year = int(date_str.split('.')[-1])
         if year_filter and year != year_filter:
             continue
-        
-        if isinstance(diff, int):
-            diff_str = f"{diff:+d}"
-        else:
-            diff_str = diff
-        
-        line = f"{date_str:<12} {count:<6} {diff_str:<6} {sum1:<8} {sum2:<8}"
-        lines.append(line)
+        diff_str = f"{diff:+d}" if isinstance(diff, int) else diff
+        lines.append(f"{date_str:<12} {count:<6} {diff_str:<6} {sum1:<8} {sum2:<8}")
     
     lines.append("</pre>")
-    full_text = "\n".join(lines)
-    
-    if len(full_text) > 4000:
-        full_text = full_text[:3900] + "\n... (обрезано)</pre>"
-    return full_text
+    text = "\n".join(lines)
+    return text[:4000] if len(text) > 4000 else text
 
 # ========== БОТ ==========
-TOKEN = "ВАШ_ТОКЕН"
-app = None
+app_bot = None
 flask_app = Flask(__name__)
 
 async def start(update: Update, context):
-    keyboard = [
-        [InlineKeyboardButton("📊 Вся таблица", callback_data="show_all")],
-        [InlineKeyboardButton("📅 За год", callback_data="show_year")],
-        [InlineKeyboardButton("➕ Добавить забег", callback_data="add_run")],
-    ]
-    await update.message.reply_text(
-        "🏃 Забеги в Царицыно\nДанные с 2022 года",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    keyboard = [[InlineKeyboardButton("📊 Вся таблица", callback_data="show_all")],
+                [InlineKeyboardButton("📅 За год", callback_data="show_year")],
+                [InlineKeyboardButton("➕ Добавить забег", callback_data="add_run")]]
+    await update.message.reply_text("🏃 Забеги в Царицыно\nДанные с 2022 года", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
-    
     if query.data == "show_all":
-        text = format_table(build_table())
-        await query.edit_message_text(text, parse_mode="HTML")
+        await query.edit_message_text(format_table(build_table()), parse_mode="HTML")
     elif query.data == "show_year":
         years = sorted(set(row[0].split('.')[-1] for row in build_table()))
         keyboard = [[InlineKeyboardButton(str(y), callback_data=f"year_{y}")] for y in years]
         await query.edit_message_text("Выберите год:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif query.data.startswith("year_"):
         year = int(query.data.split("_")[1])
-        text = format_table(build_table(), year_filter=year)
-        await query.edit_message_text(text, parse_mode="HTML")
+        await query.edit_message_text(format_table(build_table(), year_filter=year), parse_mode="HTML")
     elif query.data == "add_run":
         await query.edit_message_text("Введите /add для добавления записи")
 
@@ -141,28 +123,21 @@ async def add_day(update: Update, context):
     return COUNT_STATE
 
 async def add_count(update: Update, context):
-    year = context.user_data['year']
-    month = context.user_data['month']
-    day = context.user_data['day']
-    count = int(update.message.text)
-    
-    raw_data.append([year, month, day, count])
+    raw_data.append([context.user_data['year'], context.user_data['month'], context.user_data['day'], int(update.message.text)])
     raw_data.sort(key=lambda x: (x[0], x[1], x[2]))
-    save_data(raw_data)  # Сохраняем в файл!
-    
-    await update.message.reply_text(f"✅ Добавлено: {day:02d}.{month:02d}.{year} — {count} участников")
+    save_data(raw_data)
+    await update.message.reply_text(f"✅ Добавлено!")
     return ConversationHandler.END
 
 async def cancel(update: Update, context):
     await update.message.reply_text("Отменено")
     return ConversationHandler.END
 
-# ========== ВЕБХУКИ (для облачных серверов) ==========
+# ========== ВЕБХУКИ ДЛЯ RENDER ==========
 @flask_app.route(f'/{TOKEN}', methods=['POST'])
 async def webhook():
-    """Принимает обновления от Telegram"""
-    update = Update.de_json(request.get_json(force=True), app.bot)
-    await app.process_update(update)
+    update = Update.de_json(request.get_json(force=True), app_bot.bot)
+    await app_bot.process_update(update)
     return 'ok'
 
 @flask_app.route('/')
@@ -170,40 +145,20 @@ def home():
     return "Бот работает!"
 
 def setup_webhook():
-    """Устанавливает вебхук при запуске"""
-    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}/{TOKEN}"
-    app.bot.set_webhook(webhook_url)
+    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+    app_bot.bot.set_webhook(webhook_url)
 
 def main():
-    global app
-    app = Application.builder().token(TOKEN).build()
+    global app_bot
+    app_bot = Application.builder().token(TOKEN).build()
+    app_bot.add_handler(CommandHandler("start", start))
+    app_bot.add_handler(CallbackQueryHandler(button_handler))
     
-    # Команды
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    conv_handler = ConversationHandler(entry_points=[CommandHandler("add", add_start)], states={YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_year)], MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_month)], DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_day)], COUNT_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_count)]}, fallbacks=[CommandHandler("cancel", cancel)])
+    app_bot.add_handler(conv_handler)
     
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("add", add_start)],
-        states={
-            YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_year)],
-            MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_month)],
-            DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_day)],
-            COUNT_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_count)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    app.add_handler(conv_handler)
-    
-    # Запускаем Flask отдельно (для вебхуков)
-    import threading
     threading.Thread(target=lambda: flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))).start()
-    
-    # Устанавливаем вебхук (если не локально)
-    if not os.environ.get('LOCAL'):
-        asyncio.run(setup_webhook())
-    
-    # Запускаем polling (запасной вариант)
-    app.run_polling()
+    asyncio.run(setup_webhook())
 
 if __name__ == "__main__":
     main()
