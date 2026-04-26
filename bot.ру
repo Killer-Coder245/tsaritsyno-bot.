@@ -9,8 +9,7 @@ import threading
 
 # ========== КОНФИГУРАЦИЯ ==========
 TOKEN = os.environ.get("8366201997:AAEt_QiSBcCUg2x4b-47M9c5TasVpSpFra4")  # Токен из переменных окружения
-if not TOKEN:
-    raise ValueError("BOT_TOKEN не задан!")
+
 
 DATA_FILE = "races_data.json"
 
