@@ -183,7 +183,20 @@ async def auto_update():
     update_from_site()
     global raw_data
     raw_data = load_data()
-
+def ensure_data_file():
+    """Создаёт файл с данными, если его нет"""
+    if not os.path.exists(DATA_FILE):
+        initial_data = [
+            [2022, 7, 30, 49], [2022, 8, 6, 37], [2022, 8, 13, 40], [2022, 8, 20, 45],
+            [2022, 8, 27, 78], [2022, 9, 3, 50], [2022, 9, 10, 41], [2022, 9, 17, 31],
+            [2022, 9, 24, 10], [2022, 10, 1, 33], [2022, 10, 8, 43], [2022, 10, 15, 34],
+            [2022, 10, 22, 54], [2022, 10, 29, 56], [2022, 11, 5, 38], [2022, 11, 12, 57],
+            [2022, 11, 19, 30], [2022, 11, 26, 29], [2022, 12, 3, 20], [2022, 12, 10, 26],
+            [2022, 12, 17, 19], [2022, 12, 24, 13], [2022, 12, 31, 16]
+        ]
+        with open(DATA_FILE, 'w') as f:
+            json.dump(initial_data, f, indent=2)
+        print(f"Создан файл {DATA_FILE} с начальными данными")
 def main():
     global app, scheduler
     app = Application.builder().token(TOKEN).build()
