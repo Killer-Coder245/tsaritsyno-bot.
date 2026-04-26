@@ -8,7 +8,7 @@ import asyncio
 import threading
 
 # ========== КОНФИГУРАЦИЯ ==========
-TOKEN = os.environ.get(8539489977:AAFwOhVYMS5V_1NtfDIJBIKpvDPmtEnpfoA)  # Токен из переменных окружения
+TOKEN = '8539489977:AAFCgiAz7M9CH7yssMkdBo0BLH1310Tiuo0'  # Токен из переменных окружения
 
 
 DATA_FILE = "races_data.json"
